@@ -295,6 +295,85 @@ const SMC = (() => {
   }
 
   // ---------------------------------------------------------------
+  // ONE-CALL ANALYSIS  (runs every detector above on a candle array)
+  // ---------------------------------------------------------------
+  function analyzeCandles(candles) {
+    const swings = findSwings(candles, 2);
+    const { events, bias } = detectStructureEvents(swings);
+    const sweeps = detectLiquiditySweeps(candles, swings);
+    const { equalHighs, equalLows } = detectEqualLevels(swings);
+    const fvgs = detectFVGs(candles);
+    const displacements = detectDisplacement(candles);
+    const orderBlocks = detectOrderBlocks(candles, displacements);
+    const recentHigh = Math.max(...candles.slice(-50).map(c => c.high));
+    const recentLow = Math.min(...candles.slice(-50).map(c => c.low));
+    const currentPrice = candles[candles.length - 1].close;
+    const pd = premiumDiscount(recentHigh, recentLow, currentPrice);
+    return { swings, events, bias, sweeps, equalHighs, equalLows, fvgs, displacements, orderBlocks, pd, currentPrice, candles };
+  }
+
+  // ---------------------------------------------------------------
+  // CONDITIONAL SCENARIOS  ("if price does X, here's the plan")
+  // ---------------------------------------------------------------
+  /**
+   * Unlike generateSignal() (which only fires once EVERY condition is
+   * already met), this builds the nearest bullish AND bearish conditional
+   * plan from the current structure — for the "what to watch for next"
+   * narrative. These are NOT live signals, just pre-computed if/then
+   * plans anchored to real zones already on the chart.
+   */
+  function buildScenarios(exec) {
+    const { swings, fvgs, orderBlocks, currentPrice } = exec;
+    const swingHighs = swings.filter(s => s.type === 'high').map(s => s.price).sort((a, b) => a - b);
+    const swingLows = swings.filter(s => s.type === 'low').map(s => s.price).sort((a, b) => b - a);
+
+    const bullishZones = [...fvgs.filter(f => f.type === 'bullish'), ...orderBlocks.filter(o => o.direction === 'bullish-OB')]
+      .filter(z => z.top < currentPrice)
+      .sort((a, b) => b.top - a.top);
+    const bearishZones = [...fvgs.filter(f => f.type === 'bearish'), ...orderBlocks.filter(o => o.direction === 'bearish-OB')]
+      .filter(z => z.bottom > currentPrice)
+      .sort((a, b) => a.bottom - b.bottom);
+
+    let bullish = null;
+    const bz = bullishZones[0];
+    if (bz) {
+      const risk = bz.top - bz.bottom;
+      const sl = bz.bottom - risk * 0.5;
+      const targets = swingHighs.filter(h => h > currentPrice);
+      const tp1 = targets[0] ?? null;
+      const tp2 = targets[1] ?? null;
+      bullish = {
+        direction: 'bullish',
+        zoneType: bz.type || bz.direction,
+        entryZone: { top: bz.top, bottom: bz.bottom },
+        stopLoss: sl,
+        tp1, tp2,
+        rr1: tp1 ? +(((tp1 - bz.top) / (bz.top - sl)).toFixed(2)) : null
+      };
+    }
+
+    let bearish = null;
+    const brz = bearishZones[0];
+    if (brz) {
+      const risk = brz.top - brz.bottom;
+      const sl = brz.top + risk * 0.5;
+      const targets = swingLows.filter(l => l < currentPrice);
+      const tp1 = targets[0] ?? null;
+      const tp2 = targets[1] ?? null;
+      bearish = {
+        direction: 'bearish',
+        zoneType: brz.type || brz.direction,
+        entryZone: { top: brz.top, bottom: brz.bottom },
+        stopLoss: sl,
+        tp1, tp2,
+        rr1: tp1 ? +(((brz.bottom - tp1) / (sl - brz.bottom)).toFixed(2)) : null
+      };
+    }
+
+    return { bullish, bearish };
+  }
+
+  // ---------------------------------------------------------------
   // CONFLUENCE / SIGNAL ENGINE  (section 5 of the spec — hard rules)
   // ---------------------------------------------------------------
   /**
@@ -305,7 +384,7 @@ const SMC = (() => {
    * This function NEVER outputs BUY/SELL without every condition met —
    * that rule is enforced here in code, not left to the AI wrapper.
    */
-  function generateSignal({ bias, sweeps, displacements, structureEvents, fvgs, orderBlocks, pd, currentPrice }) {
+  function generateSignal({ bias, sweeps, displacements, structureEvents, fvgs, orderBlocks, pd, currentPrice, swings = [] }) {
     const reasons = [];
     const lastSweep = sweeps[sweeps.length - 1];
     const lastDisplacement = displacements[displacements.length - 1];
@@ -347,12 +426,27 @@ const SMC = (() => {
       return { signal: 'WAIT', reasons, confidence };
     }
 
+    const entryZone = { top: lastZone.top, bottom: lastZone.bottom };
+    const entryMid = (entryZone.top + entryZone.bottom) / 2;
+    const invalidation = wantDirection === 'bullish' ? pd.rangeLow : pd.rangeHigh;
+    const risk = Math.abs(entryMid - invalidation);
+
+    // TP1/TP2 = nearest real opposing swing levels beyond entry — never invented.
+    const targets = wantDirection === 'bullish'
+      ? swings.filter(s => s.type === 'high' && s.price > entryZone.top).map(s => s.price).sort((a, b) => a - b)
+      : swings.filter(s => s.type === 'low' && s.price < entryZone.bottom).map(s => s.price).sort((a, b) => b - a);
+    const tp1 = targets[0] ?? null;
+    const tp2 = targets[1] ?? null;
+    const rr1 = tp1 && risk > 0 ? +(Math.abs(tp1 - entryMid) / risk).toFixed(2) : null;
+    const rr2 = tp2 && risk > 0 ? +(Math.abs(tp2 - entryMid) / risk).toFixed(2) : null;
+
     return {
       signal: wantDirection === 'bullish' ? 'BUY' : 'SELL',
       reasons,
       confidence,
-      entryZone: lastZone ? { top: lastZone.top, bottom: lastZone.bottom } : null,
-      invalidation: wantDirection === 'bullish' ? pd.rangeLow : pd.rangeHigh
+      entryZone,
+      invalidation,
+      tp1, tp2, rr1, rr2
     };
   }
 
@@ -369,6 +463,8 @@ const SMC = (() => {
     currentSession,
     marketStatus,
     htfBias,
+    analyzeCandles,
+    buildScenarios,
     generateSignal
   };
 })();

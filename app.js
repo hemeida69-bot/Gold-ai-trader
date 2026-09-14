@@ -55,19 +55,8 @@
   // Backend market data (quote + candles). Fails honestly if the
   // API key hasn't been configured yet — see api/market-data.js.
   // ---------------------------------------------------------------
-  async function fetchJSON(url) {
-    try {
-      const r = await fetch(url);
-      const j = await r.json();
-      if (!r.ok) return { error: j.error || 'Request failed' };
-      return j;
-    } catch (e) {
-      return { error: 'Backend unreachable (is /api deployed?)' };
-    }
-  }
-
   async function refreshTicker() {
-    const quote = await fetchJSON('/api/market-data?type=quote');
+    const quote = await MarketData.fetchJSON('/api/market-data?type=quote');
     const priceEl = document.getElementById('price');
     const changeEl = document.getElementById('change');
     const noteEl = document.getElementById('data-source-note');
@@ -95,7 +84,7 @@
   }
 
   async function refreshDailyLevels() {
-    const daily = await fetchJSON('/api/market-data?type=daily');
+    const daily = await MarketData.fetchJSON('/api/market-data?type=daily');
     if (daily.error || !daily.candles) return null;
     const levels = SMC.dailyLevels(daily.candles);
     if (!levels) return null;
@@ -114,32 +103,6 @@
   // ANALYZE GOLD NOW — runs the deterministic SMC engine across
   // D1 -> H4 -> H1 -> M15, with M5 as the execution timeframe.
   // ---------------------------------------------------------------
-  const TF_INTERVALS = { D1: 'daily', H4: '4h', H1: '1h', M15: '15min', M5: '5min' };
-
-  async function fetchCandles(tfType) {
-    if (tfType === 'daily') {
-      const d = await fetchJSON('/api/market-data?type=daily');
-      return d.candles || null;
-    }
-    const d = await fetchJSON(`/api/market-data?type=intraday&interval=${tfType}`);
-    return d.candles || null;
-  }
-
-  function analyzeTimeframe(candles) {
-    const swings = SMC.findSwings(candles, 2);
-    const { events, bias } = SMC.detectStructureEvents(swings);
-    const sweeps = SMC.detectLiquiditySweeps(candles, swings);
-    const { equalHighs, equalLows } = SMC.detectEqualLevels(swings);
-    const fvgs = SMC.detectFVGs(candles);
-    const displacements = SMC.detectDisplacement(candles);
-    const orderBlocks = SMC.detectOrderBlocks(candles, displacements);
-    const recentHigh = Math.max(...candles.slice(-50).map(c => c.high));
-    const recentLow = Math.min(...candles.slice(-50).map(c => c.low));
-    const currentPrice = candles[candles.length - 1].close;
-    const pd = SMC.premiumDiscount(recentHigh, recentLow, currentPrice);
-    return { swings, events, bias, sweeps, equalHighs, equalLows, fvgs, displacements, orderBlocks, pd, currentPrice };
-  }
-
   function renderSignal(result) {
     const badge = document.getElementById('signal-badge');
     const body = document.getElementById('signal-body');
@@ -150,7 +113,9 @@
     if (result.signal === 'BUY' || result.signal === 'SELL') {
       html += `<div class="trade-grid">
         <div class="trade-field"><div class="label">Entry Zone</div><div class="value">${result.entryZone.bottom.toFixed(2)} – ${result.entryZone.top.toFixed(2)}</div></div>
-        <div class="trade-field"><div class="label">Invalidation</div><div class="value">${result.invalidation.toFixed(2)}</div></div>
+        <div class="trade-field"><div class="label">Invalidation (SL)</div><div class="value">${result.invalidation.toFixed(2)}</div></div>
+        <div class="trade-field"><div class="label">TP1${result.rr1 ? ` (${result.rr1}R)` : ''}</div><div class="value">${result.tp1 ? result.tp1.toFixed(2) : '—'}</div></div>
+        <div class="trade-field"><div class="label">TP2${result.rr2 ? ` (${result.rr2}R)` : ''}</div><div class="value">${result.tp2 ? result.tp2.toFixed(2) : '—'}</div></div>
         <div class="trade-field"><div class="label">Confidence</div><div class="value">${result.confidence}%</div></div>
         <div class="trade-field"><div class="label">Bias</div><div class="value">${result.signal === 'BUY' ? 'Bullish' : 'Bearish'}</div></div>
       </div>
@@ -159,6 +124,7 @@
       html += `<div class="confidence-bar"><div class="confidence-bar__fill" style="width:${result.confidence}%"></div></div>`;
     }
     html += `<ul class="reason-list">${result.reasons.map(r => `<li>${r}</li>`).join('')}</ul>`;
+    html += `<a class="analysis-link" href="analysis.html">See full analysis & entry scenarios →</a>`;
     body.innerHTML = html;
   }
 
@@ -178,24 +144,11 @@
     btn.textContent = 'Analyzing…';
 
     try {
-      const [d1, h4, h1, m15] = await Promise.all([
-        fetchCandles(TF_INTERVALS.D1),
-        fetchCandles(TF_INTERVALS.H4),
-        fetchCandles(TF_INTERVALS.H1),
-        fetchCandles(TF_INTERVALS.M15)
-      ]);
-
-      if (!d1 || !h4 || !h1 || !m15) {
+      const structureByTF = await MarketData.fetchAndAnalyzeAll();
+      if (!structureByTF) {
         renderNoData();
         return;
       }
-
-      const structureByTF = {
-        D1: analyzeTimeframe(d1),
-        H4: analyzeTimeframe(h4),
-        H1: analyzeTimeframe(h1),
-        M15: analyzeTimeframe(m15)
-      };
 
       const bias = SMC.htfBias(structureByTF);
       const exec = structureByTF.M15; // M5 execution data can replace M15 once available
@@ -207,7 +160,8 @@
         fvgs: exec.fvgs,
         orderBlocks: exec.orderBlocks,
         pd: exec.pd,
-        currentPrice: exec.currentPrice
+        currentPrice: exec.currentPrice,
+        swings: exec.swings
       });
 
       renderSignal(result);

@@ -91,6 +91,42 @@ server-side with the same env var name, or adjust `app.js`'s fetch URLs.
 2. Share button → **Add to Home Screen**
 3. It launches full-screen, no Safari UI, with the app icon generated in `icons/`
 
+## Live Analysis page (`analysis.html`)
+
+A second page, linked from the dashboard ("Full Analysis →"), that goes
+deeper than the BUY/SELL/WAIT badge:
+
+- **What happened** — the latest structure break (BOS/CHoCH) and any
+  liquidity sweep on each timeframe, in plain language, assembled purely
+  from the engine's structured output (no AI, no invented commentary)
+- **Timeframe bias** — bullish/bearish/neutral chips for D1/H4/H1/M15
+- **What's expected next** — the current HTF bias and, if one exists, the
+  nearest real zone price would need to reach for an entry to become valid
+- **Key entry zones to watch** — bullish AND bearish "if price reaches
+  this zone" scenario cards, each with a real Entry/SL/TP1/TP2/RR computed
+  from actual swing highs/lows — shown even while the main signal is WAIT,
+  so you can see where to watch without it being a live signal
+- **Setup Alerts** — toggle browser notifications; while this page/app is
+  open it re-checks every 3 minutes and fires a native notification the
+  moment a BUY/SELL fully confirms, with entry/SL/confidence in the alert
+
+### Alert limitation (read this before relying on it)
+
+The alert toggle uses the device's own Notification API — it only fires
+while this page or the installed PWA is open (foreground, or briefly
+backgrounded). It will **not** wake up if you fully close the app or your
+iPad is asleep.
+
+True background alerts (arrive even with the app closed) need three more
+pieces: VAPID keys for Web Push, somewhere to persist push subscriptions
++ the last-alerted signal (since Vercel functions are stateless — a small
+free Redis like Upstash works), and a scheduler to periodically trigger
+the check server-side (Vercel Hobby's built-in Cron only runs once a day,
+so a free external pinger like cron-job.org calling an `/api/check-alert`
+endpoint every few minutes is the practical option). None of that is
+wired up yet — it's a reasonable next step if you want alerts that survive
+the app being closed.
+
 ## Roadmap (not built yet — by design, per the phased spec)
 
 - Wire M5 as the true execution timeframe once intraday rate limits allow it

@@ -1,9 +1,12 @@
-const CACHE_NAME = 'gold-ai-trader-v2';
+const CACHE_NAME = 'gold-ai-trader-v3';
 const SHELL_FILES = [
   './',
   './index.html',
+  './analysis.html',
   './styles.css',
   './app.js',
+  './data.js',
+  './analysis-page.js',
   './smc-engine.js',
   './manifest.json',
   './icons/icon-192.png',
@@ -24,12 +27,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Network-first for the app shell (HTML/JS/CSS) so a new deploy is always
+// picked up on next load instead of silently serving a stale cached copy —
+// this is the exact bug that caused the earlier "still shows old version"
+// confusion. Cache is only a fallback for when the network is unavailable.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  // Never cache API calls — market data must always be fresh (or honestly fail).
-  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.startsWith('/api/')) return; // never cache market data
 
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
