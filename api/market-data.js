@@ -6,22 +6,25 @@
  * variable on the server (Vercel dashboard -> Settings -> Environment
  * Variables), NEVER in any file shipped to the browser.
  *
- * Set:   MARKET_DATA_API_KEY = <your Alpha Vantage API key>
- * Get a free key at: https://www.alphavantage.co/support/#api-key
+ * Provider: Twelve Data (https://twelvedata.com) — chosen instead of
+ * Alpha Vantage because Alpha Vantage's free tier no longer reliably
+ * serves XAU/USD (CURRENCY_EXCHANGE_RATE is premium-only, and FX_DAILY/
+ * FX_INTRADAY frequently reject the XAU pair outright). Twelve Data's
+ * free tier explicitly supports XAU/USD as a standard symbol.
  *
- * Frontend calls:
+ * Set:   MARKET_DATA_API_KEY = <your Twelve Data API key>
+ * Get a free key at: https://twelvedata.com/pricing  (free plan: 800
+ * requests/day, 8/min — plenty for personal use)
+ *
+ * Frontend calls (unchanged contract — swapping providers again later
+ * only means editing this file, never the frontend):
  *   GET /api/market-data?type=quote
- *   GET /api/market-data?type=intraday&interval=5min
+ *   GET /api/market-data?type=intraday&interval=5min   (5min|15min|1h|4h)
  *   GET /api/market-data?type=daily
- *
- * Swap ALPHA_VANTAGE_BASE / the fetch logic below for a different
- * provider (Twelve Data, Polygon, etc.) without touching the frontend —
- * the frontend only ever talks to this same-origin endpoint.
  */
 
-const ALPHA_VANTAGE_BASE = 'https://www.alphavantage.co/query';
-const FROM_SYMBOL = 'XAU';
-const TO_SYMBOL = 'USD';
+const BASE = 'https://api.twelvedata.com';
+const SYMBOL = 'XAU/USD';
 
 module.exports = async (req, res) => {
   const apiKey = process.env.MARKET_DATA_API_KEY;
@@ -37,52 +40,51 @@ module.exports = async (req, res) => {
   const { type = 'quote', interval = '5min' } = req.query;
 
   try {
-    let url;
     if (type === 'quote') {
-      url = `${ALPHA_VANTAGE_BASE}?function=CURRENCY_EXCHANGE_RATE&from_currency=${FROM_SYMBOL}&to_currency=${TO_SYMBOL}&apikey=${apiKey}`;
-    } else if (type === 'intraday') {
-      url = `${ALPHA_VANTAGE_BASE}?function=FX_INTRADAY&from_symbol=${FROM_SYMBOL}&to_symbol=${TO_SYMBOL}&interval=${interval}&outputsize=full&apikey=${apiKey}`;
-    } else if (type === 'daily') {
-      url = `${ALPHA_VANTAGE_BASE}?function=FX_DAILY&from_symbol=${FROM_SYMBOL}&to_symbol=${TO_SYMBOL}&outputsize=compact&apikey=${apiKey}`;
-    } else {
-      return res.status(400).json({ error: 'Unknown type. Use quote | intraday | daily.' });
-    }
+      const url = `${BASE}/quote?symbol=${encodeURIComponent(SYMBOL)}&apikey=${apiKey}`;
+      const upstream = await fetch(url);
+      const q = await upstream.json();
 
-    const upstream = await fetch(url);
-    const data = await upstream.json();
+      if (q.status === 'error' || q.code) {
+        return res.status(q.code === 429 ? 429 : 502).json({ error: 'Market data provider error.', detail: q.message || q });
+      }
 
-    if (data.Note || data.Information) {
-      // Alpha Vantage rate-limit / plan message — surface it plainly.
-      return res.status(429).json({ error: 'Market data provider rate limit or plan restriction.', detail: data.Note || data.Information });
-    }
-
-    // Normalize into a shape the frontend engine expects.
-    if (type === 'quote') {
-      const q = data['Realtime Currency Exchange Rate'];
-      if (!q) return res.status(502).json({ error: 'Unexpected provider response.', raw: data });
       return res.status(200).json({
         symbol: 'XAUUSD',
-        price: parseFloat(q['5. Exchange Rate']),
-        time: q['6. Last Refreshed'],
-        timezone: q['7. Time Zone']
+        price: parseFloat(q.close),
+        dayHigh: parseFloat(q.high),
+        dayLow: parseFloat(q.low),
+        previousClose: parseFloat(q.previous_close),
+        change: parseFloat(q.percent_change),
+        time: q.datetime
       });
     }
 
-    const seriesKey = Object.keys(data).find(k => k.toLowerCase().includes('time series'));
-    if (!seriesKey) return res.status(502).json({ error: 'Unexpected provider response.', raw: data });
+    if (type === 'intraday' || type === 'daily') {
+      const tdInterval = type === 'daily' ? '1day' : interval; // e.g. 5min | 15min | 1h | 4h
+      const outputsize = type === 'daily' ? 5 : 200;
+      const url = `${BASE}/time_series?symbol=${encodeURIComponent(SYMBOL)}&interval=${tdInterval}&outputsize=${outputsize}&apikey=${apiKey}`;
+      const upstream = await fetch(url);
+      const data = await upstream.json();
 
-    const series = data[seriesKey];
-    const candles = Object.entries(series)
-      .map(([time, ohlc]) => ({
-        time: Math.floor(new Date(time + 'Z').getTime() / 1000),
-        open: parseFloat(ohlc['1. open']),
-        high: parseFloat(ohlc['2. high']),
-        low: parseFloat(ohlc['3. low']),
-        close: parseFloat(ohlc['4. close'])
-      }))
-      .sort((a, b) => a.time - b.time);
+      if (data.status === 'error' || !data.values) {
+        return res.status(data.code === 429 ? 429 : 502).json({ error: 'Market data provider error.', detail: data.message || data });
+      }
 
-    return res.status(200).json({ symbol: 'XAUUSD', interval: type === 'daily' ? '1day' : interval, candles });
+      const candles = data.values
+        .map(v => ({
+          time: Math.floor(new Date(v.datetime.replace(' ', 'T') + 'Z').getTime() / 1000),
+          open: parseFloat(v.open),
+          high: parseFloat(v.high),
+          low: parseFloat(v.low),
+          close: parseFloat(v.close)
+        }))
+        .sort((a, b) => a.time - b.time); // Twelve Data returns newest-first — flip to chronological
+
+      return res.status(200).json({ symbol: 'XAUUSD', interval: tdInterval, candles });
+    }
+
+    return res.status(400).json({ error: 'Unknown type. Use quote | intraday | daily.' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to reach market data provider.', detail: String(err) });
   }

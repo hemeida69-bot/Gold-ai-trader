@@ -24,21 +24,28 @@ this is by design (see spec section 7), not a bug.
 
 ### Where the key goes (never in the frontend)
 
-1. Get a free key: https://www.alphavantage.co/support/#api-key
+Provider: **Twelve Data** (https://twelvedata.com). Alpha Vantage was the
+original choice but its free tier no longer reliably serves XAU/USD
+(`CURRENCY_EXCHANGE_RATE` is premium-only, and its FX endpoints frequently
+reject the XAU pair outright) — Twelve Data's free plan explicitly
+supports `XAU/USD` as a standard symbol.
+
+1. Get a free key: https://twelvedata.com/pricing → free plan (800
+   requests/day, 8/min — plenty for personal use)
 2. Deploy this project to Vercel (or any host that runs the `api/` serverless function)
 3. In the hosting dashboard → **Environment Variables**, add:
    ```
-   MARKET_DATA_API_KEY = <your key>
+   MARKET_DATA_API_KEY = <your Twelve Data key>
    ```
-4. Redeploy. The frontend never sees this key — it only calls your own
-   `/api/market-data` endpoint, which reads the key server-side
-   (`api/market-data.js`).
+4. Redeploy — adding/changing an environment variable does **not**
+   trigger a redeploy by itself in Vercel; you must trigger one manually
+   (Deployments → ⋯ → Redeploy) or push a new commit.
 
-Free-tier Alpha Vantage is rate-limited (5 requests/min, 25/day on the free
-plan) — fine for personal use, but if you want faster refresh you'll want a
-paid tier or a different provider (Twelve Data, Polygon.io both work the
-same way — just swap the fetch logic inside `api/market-data.js`; the
-frontend contract stays identical).
+The frontend never sees this key — it only calls your own
+`/api/market-data` endpoint, which reads the key server-side
+(`api/market-data.js`). Want a different provider later (Polygon.io,
+etc.)? Swap the fetch logic inside that one file — the frontend contract
+(`?type=quote|intraday|daily`) stays identical.
 
 ## Architecture (matches the spec)
 

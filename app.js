@@ -69,18 +69,28 @@
   async function refreshTicker() {
     const quote = await fetchJSON('/api/market-data?type=quote');
     const priceEl = document.getElementById('price');
+    const changeEl = document.getElementById('change');
     const noteEl = document.getElementById('data-source-note');
 
     if (quote.error) {
       priceEl.textContent = '— — —';
       priceEl.classList.add('is-stale');
-      noteEl.textContent = 'Live data: not connected';
+      changeEl.textContent = '';
+      noteEl.textContent = `Live data: not connected (${quote.error})`;
       return null;
     }
 
     priceEl.textContent = quote.price.toFixed(2);
     priceEl.classList.remove('is-stale');
-    noteEl.textContent = `Live data: Alpha Vantage · ${quote.time} ${quote.timezone || ''}`;
+    if (!isNaN(quote.change)) {
+      changeEl.textContent = `${quote.change >= 0 ? '▲' : '▼'} ${Math.abs(quote.change).toFixed(2)}%`;
+      changeEl.className = 'ticker__change ' + (quote.change >= 0 ? 'up' : 'down');
+    }
+    noteEl.textContent = `Live data: Twelve Data · ${quote.time}`;
+
+    if (quote.dayHigh) document.getElementById('day-high').textContent = quote.dayHigh.toFixed(2);
+    if (quote.dayLow) document.getElementById('day-low').textContent = quote.dayLow.toFixed(2);
+
     return quote;
   }
 
@@ -104,7 +114,7 @@
   // ANALYZE GOLD NOW — runs the deterministic SMC engine across
   // D1 -> H4 -> H1 -> M15, with M5 as the execution timeframe.
   // ---------------------------------------------------------------
-  const TF_INTERVALS = { D1: 'daily', H4: '240min', H1: '60min', M15: '15min', M5: '5min' };
+  const TF_INTERVALS = { D1: 'daily', H4: '4h', H1: '1h', M15: '15min', M5: '5min' };
 
   async function fetchCandles(tfType) {
     if (tfType === 'daily') {
