@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gold-ai-trader-v1';
+const CACHE_NAME = 'gold-ai-trader-v2';
 const SHELL_FILES = [
   './',
   './index.html',
