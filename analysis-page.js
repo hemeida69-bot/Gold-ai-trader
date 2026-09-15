@@ -153,7 +153,7 @@
         newsRiskHigh: news.high
       });
       const scenarios = SMC.buildScenarios(exec);
-      const daily = await MarketData.fetchJSON('/api/market-data?type=daily').then(d => d.candles ? SMC.dailyLevels(d.candles) : null);
+      const daily = MarketData.dailyLevelsFrom(structureByTF);
       const liq = SMC.liquiditySummary(exec, daily);
 
       renderSignalCard(result);

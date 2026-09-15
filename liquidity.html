@@ -53,7 +53,7 @@ async function run() {
       return;
     }
     const exec = structureByTF.M5;
-    const daily = await MarketData.fetchJSON('/api/market-data?type=daily').then(d => d.candles ? SMC.dailyLevels(d.candles) : null);
+    const daily = MarketData.dailyLevelsFrom(structureByTF);
     const liq = SMC.liquiditySummary(exec, daily);
 
     document.getElementById('buyside-list').innerHTML = liq.buySidePools.length

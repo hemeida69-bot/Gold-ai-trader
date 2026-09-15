@@ -233,7 +233,7 @@
       });
 
       const scenarios = SMC.buildScenarios(exec);
-      const daily = await MarketData.fetchJSON('/api/market-data?type=daily').then(d => d.candles ? SMC.dailyLevels(d.candles) : null);
+      const daily = MarketData.dailyLevelsFrom(structureByTF);
       const liq = SMC.liquiditySummary(exec, daily);
 
       renderCurrentAction(result);
@@ -250,8 +250,12 @@
 
   document.getElementById('analyze-btn').addEventListener('click', runAnalysis);
 
-  // Auto-analysis on open (spec section 14/51), then quiet re-checks.
+  // Auto-analysis on open (spec section 14/51), then quiet re-checks —
+  // respects the Settings auto-refresh toggle so the person can turn
+  // this off entirely if they're tight on API quota.
   runAnalysis();
-  setInterval(runAnalysis, 3 * 60 * 1000);
+  if (localStorage.getItem('goldAiTrader.autoRefresh') !== 'false') {
+    setInterval(runAnalysis, 3 * 60 * 1000);
+  }
 
 })();

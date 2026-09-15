@@ -67,10 +67,30 @@ The frontend only ever calls your own `/api/market-data` endpoint.
 
 ## Rate-limit note
 
-A full "Analyze" run now fetches 5 timeframes (D1/H4/H1/M15/M5) instead of
-4. Combined with the 30-second price ticker poll and any auto-refresh,
-stay mindful of Twelve Data's 8 requests/minute free-tier cap — the app
-surfaces a clear rate-limit error rather than silently failing if you hit it.
+Two things changed to make Twelve Data's free 8-requests/minute cap much
+easier to stay under:
+
+1. **Caching.** `data.js` now caches every response in `localStorage` with
+   a short TTL (20s for the live quote, 45s for intraday candles, 60-120s
+   for daily/DXY/US10Y). Since every page here is a full reload rather
+   than a single-page app, clicking through Dashboard → Liquidity →
+   Structure → Setups → AI Analysis used to fire a brand-new 5-timeframe
+   fetch on every single page load — that alone could blow the limit in
+   a few seconds. Now a page you revisit within the TTL window reuses the
+   cached answer instead of re-hitting the provider.
+2. **One less call per analysis.** Liquidity's daily-levels lookup used to
+   make its own separate `type=daily` request even though the D1 candles
+   from the 5-timeframe fetch already contain the same data — it now
+   reuses those candles (`MarketData.dailyLevelsFrom`) instead.
+
+If you still hit the limit under heavy use, two options: raise Twelve
+Data's plan, or switch providers — Finnhub's free tier allows 60
+requests/minute (vs. Twelve Data's 8) and also covers XAU/USD forex
+candles. Swapping providers is a one-file change in `api/market-data.js`
+(same pattern as the Alpha Vantage → Twelve Data swap earlier), but ask
+before assuming Finnhub's exact response shape works first-try — the
+Alpha Vantage attempt looked right on paper too and needed a live test
+to catch the real issue.
 
 ## Deploying
 
