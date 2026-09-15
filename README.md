@@ -56,41 +56,33 @@ explanations are added later, they only describe this structured output.
 
 ## Where the API key goes (never in the frontend)
 
-Provider: **Twelve Data** (https://twelvedata.com/pricing — free plan: 800
-requests/day, 8/min).
+Provider: **Finnhub** (https://finnhub.io/register — free tier: 60
+requests/minute, no daily cap). Switched from Twelve Data because
+Twelve Data's 8 requests/minute free-tier limit was too easy to exceed
+with a multi-page app, even with caching.
 
-1. Get a free key from Twelve Data.
-2. Vercel → Project → Settings → Environment Variables → add `MARKET_DATA_API_KEY`.
+1. Get a free key: https://finnhub.io/register (key appears on your dashboard right after signup).
+2. Vercel → Project → Settings → Environment Variables → **replace** the existing `MARKET_DATA_API_KEY` value with your Finnhub key (same variable name, no new one needed).
 3. Redeploy (env var changes don't auto-redeploy — trigger one manually or push a commit).
 
-The frontend only ever calls your own `/api/market-data` endpoint.
+The frontend only ever calls your own `/api/market-data` endpoint — it
+never sees this key.
+
+Note: Finnhub has no native 4-hour candle resolution, so H4 candles are
+built server-side by aggregating 60-minute candles into UTC-aligned
+4-hour buckets (see `aggregateTo4h` in `api/market-data.js`) — a
+deterministic aggregation, not invented data. DXY/US10Y are not reliably
+available on Finnhub's free plan, so those two show "N/A" honestly
+rather than guessing.
 
 ## Rate-limit note
 
-Two things changed to make Twelve Data's free 8-requests/minute cap much
-easier to stay under:
-
-1. **Caching.** `data.js` now caches every response in `localStorage` with
-   a short TTL (20s for the live quote, 45s for intraday candles, 60-120s
-   for daily/DXY/US10Y). Since every page here is a full reload rather
-   than a single-page app, clicking through Dashboard → Liquidity →
-   Structure → Setups → AI Analysis used to fire a brand-new 5-timeframe
-   fetch on every single page load — that alone could blow the limit in
-   a few seconds. Now a page you revisit within the TTL window reuses the
-   cached answer instead of re-hitting the provider.
-2. **One less call per analysis.** Liquidity's daily-levels lookup used to
-   make its own separate `type=daily` request even though the D1 candles
-   from the 5-timeframe fetch already contain the same data — it now
-   reuses those candles (`MarketData.dailyLevelsFrom`) instead.
-
-If you still hit the limit under heavy use, two options: raise Twelve
-Data's plan, or switch providers — Finnhub's free tier allows 60
-requests/minute (vs. Twelve Data's 8) and also covers XAU/USD forex
-candles. Swapping providers is a one-file change in `api/market-data.js`
-(same pattern as the Alpha Vantage → Twelve Data swap earlier), but ask
-before assuming Finnhub's exact response shape works first-try — the
-Alpha Vantage attempt looked right on paper too and needed a live test
-to catch the real issue.
+Finnhub's free tier (60 requests/minute) gives much more headroom than
+Twelve Data's (8/minute) did. `data.js` still caches every response in
+`localStorage` with a short TTL (20s quote, 45s intraday, 60-120s daily/
+macro) so repeat page visits within that window don't refetch at all —
+belt and suspenders rather than strictly required now, but it also means
+fewer redundant calls even at the higher limit.
 
 ## Deploying
 

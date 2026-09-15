@@ -4,12 +4,10 @@
  *
  * Includes a small localStorage-backed cache: every page here is a full
  * reload (not an SPA), so an in-memory cache alone wouldn't survive
- * navigation between pages. Twelve Data's free tier is only 8 requests/
- * minute, and without caching, simply clicking through Dashboard →
- * Liquidity → Structure → Setups → AI Analysis fires a fresh 5-timeframe
- * fetch on every single page load — that alone blows the limit. Caching
- * with a short TTL means "just looked this up 20-90 seconds ago" reuses
- * that answer instead of re-hitting the provider.
+ * navigation between pages. A short TTL means "just looked this up a
+ * few seconds ago" reuses that answer instead of re-hitting the
+ * provider — cheap insurance against rate limits regardless of which
+ * provider api/market-data.js is currently backed by.
  */
 const MarketData = (() => {
   const TF_INTERVALS = { D1: 'daily', H4: '4h', H1: '1h', M15: '15min', M5: '5min' };
