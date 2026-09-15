@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Market Structure</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">📊 Market Structure</div>
+  <div class="page-subtitle">Bias, BOS and CHoCH per timeframe — D1 down to the M5 execution timeframe.</div>
+  <button class="analyze-btn" id="analyze-btn">🧠 REFRESH STRUCTURE</button>
+
+  <div class="panel narrative-panel">
+    <table class="structure-table" id="full-structure-table">
+      <thead><tr><th>TF</th><th>Bias</th><th>Structure</th><th>BOS</th><th>CHoCH</th></tr></thead>
+      <tbody><tr><td colspan="5" class="empty-state">Run an analysis first.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="panel narrative-panel" id="explain-panel">
+    <h2>Explanation</h2>
+    <ul class="narrative-list" id="explain-list"><li>—</li></ul>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · Market Structure</footer>
+</div>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('structure');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+async function run() {
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true; btn.textContent = 'LOADING…';
+  try {
+    const structureByTF = await MarketData.fetchAndAnalyzeAll();
+    const tbody = document.querySelector('#full-structure-table tbody');
+    const explainList = document.getElementById('explain-list');
+    if (!structureByTF) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">LIVE DATA UNAVAILABLE — check API key / rate limit.</td></tr>';
+      return;
+    }
+    const rows = [];
+    const explains = [];
+    for (const [tf, exec] of Object.entries(structureByTF)) {
+      const last = exec.events[exec.events.length - 1];
+      const bos = last?.type === 'BOS' ? '✓' : '—';
+      const choch = last?.type === 'CHoCH' ? '✓' : '—';
+      const lastSwing = exec.swings[exec.swings.length - 1];
+      rows.push(`<tr><td>${tf}</td><td><span class="bias-tag ${exec.bias || 'neutral'}">${exec.bias || 'neutral'}</span></td><td>${lastSwing ? lastSwing.label : '—'}</td><td>${bos}</td><td>${choch}</td></tr>`);
+      explains.push(last
+        ? `${tf}: ${exec.bias || 'neutral'} structure — last event was a ${last.direction} ${last.type} at ${last.price.toFixed(2)}.`
+        : `${tf}: no clear BOS/CHoCH detected in the visible window; structure reads ${exec.bias || 'neutral'}.`);
+    }
+    tbody.innerHTML = rows.join('');
+    explainList.innerHTML = explains.map(t => `<li>${t}</li>`).join('');
+    Layout.setStatusBar({ lastUpdateText: 'just now', apiOk: true });
+  } finally {
+    btn.disabled = false; btn.textContent = '🧠 REFRESH STRUCTURE';
+  }
+}
+document.getElementById('analyze-btn').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>

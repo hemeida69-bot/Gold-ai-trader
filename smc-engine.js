@@ -384,7 +384,7 @@ const SMC = (() => {
    * This function NEVER outputs BUY/SELL without every condition met —
    * that rule is enforced here in code, not left to the AI wrapper.
    */
-  function generateSignal({ bias, sweeps, displacements, structureEvents, fvgs, orderBlocks, pd, currentPrice, swings = [] }) {
+  function generateSignal({ bias, sweeps, displacements, structureEvents, fvgs, orderBlocks, pd, currentPrice, swings = [], newsRiskHigh = false }) {
     const reasons = [];
     const lastSweep = sweeps[sweeps.length - 1];
     const lastDisplacement = displacements[displacements.length - 1];
@@ -392,7 +392,7 @@ const SMC = (() => {
 
     const wantDirection = bias === 'bullish' ? 'bullish' : bias === 'bearish' ? 'bearish' : null;
     if (!wantDirection) {
-      return { signal: 'WAIT', reasons: ['HTF bias is mixed — no directional edge'], confidence: 0 };
+      return { signal: 'WAIT', waitState: 'WAIT', reasons: ['HTF bias is mixed — no directional edge'], confidence: 0, setupScore: 0, grade: 'NO_TRADE' };
     }
 
     const sweepOk = lastSweep && (
@@ -411,19 +411,21 @@ const SMC = (() => {
       ? [...fvgs.filter(f => f.type === 'bullish'), ...orderBlocks.filter(o => o.direction === 'bullish-OB')]
       : [...fvgs.filter(f => f.type === 'bearish'), ...orderBlocks.filter(o => o.direction === 'bearish-OB')];
     const lastZone = relevantZones[relevantZones.length - 1];
-    const retestOk = !!lastZone && currentPrice <= (lastZone.top ?? -Infinity) && currentPrice >= (lastZone.bottom ?? Infinity) === false
-      ? false : !!lastZone; // presence check; precise touch confirmed by caller with live price
     reasons.push(lastZone ? `✅ Retest zone available (${lastZone.type || lastZone.direction})` : '❌ No FVG/OB retest zone found');
 
     const zoneOk = wantDirection === 'bullish' ? pd?.zone === 'discount' : pd?.zone === 'premium';
     reasons.push(zoneOk ? `✅ Price is in ${pd?.zone} (correct side of range)` : `❌ Price is in ${pd?.zone || 'unknown'}, not ${wantDirection === 'bullish' ? 'discount' : 'premium'}`);
 
-    const allOk = sweepOk && dispOk && bosOk && !!lastZone && zoneOk;
-    const passedCount = [sweepOk, dispOk, bosOk, !!lastZone, zoneOk].filter(Boolean).length;
-    const confidence = Math.round((passedCount / 5) * 100);
+    if (newsRiskHigh) reasons.push('⚠️ High-impact news event is near — setup quality downgraded');
+
+    const allOk = sweepOk && dispOk && bosOk && !!lastZone && zoneOk && !newsRiskHigh;
+    const waitState = wantDirection === 'bullish' ? 'WAIT_FOR_BUY' : 'WAIT_FOR_SELL';
 
     if (!allOk) {
-      return { signal: 'WAIT', reasons, confidence };
+      // Score the partial confluence so the UI can still show "how close" this is.
+      const { score, grade } = scoreSetup({ sweepOk, dispOk, bosOk, zonePresent: !!lastZone, zoneOk, rr1: null, newsRiskHigh });
+      const confidence = Math.round((([sweepOk, dispOk, bosOk, !!lastZone, zoneOk].filter(Boolean).length) / 5) * 100);
+      return { signal: newsRiskHigh ? 'AVOID' : 'WAIT', waitState: newsRiskHigh ? 'AVOID' : waitState, reasons, confidence, setupScore: score, grade };
     }
 
     const entryZone = { top: lastZone.top, bottom: lastZone.bottom };
@@ -440,14 +442,90 @@ const SMC = (() => {
     const rr1 = tp1 && risk > 0 ? +(Math.abs(tp1 - entryMid) / risk).toFixed(2) : null;
     const rr2 = tp2 && risk > 0 ? +(Math.abs(tp2 - entryMid) / risk).toFixed(2) : null;
 
+    const { score, grade } = scoreSetup({ sweepOk, dispOk, bosOk, zonePresent: true, zoneOk, rr1, newsRiskHigh });
+    const confidence = Math.round((([sweepOk, dispOk, bosOk, !!lastZone, zoneOk].filter(Boolean).length) / 5) * 100);
+
+    const trigger = wantDirection === 'bullish'
+      ? `Wait for M5 bullish BOS + displacement + retest of ${entryZone.bottom.toFixed(2)}–${entryZone.top.toFixed(2)}`
+      : `Wait for M5 bearish BOS + displacement + retest of ${entryZone.bottom.toFixed(2)}–${entryZone.top.toFixed(2)}`;
+    const invalidationText = wantDirection === 'bullish'
+      ? `M15 close below ${invalidation.toFixed(2)}`
+      : `M15 close above ${invalidation.toFixed(2)}`;
+
     return {
       signal: wantDirection === 'bullish' ? 'BUY' : 'SELL',
+      waitState: null,
       reasons,
       confidence,
+      setupScore: score,
+      grade,
       entryZone,
       invalidation,
+      invalidationText,
+      trigger,
       tp1, tp2, rr1, rr2
     };
+  }
+
+  // ---------------------------------------------------------------
+  // LIQUIDITY SUMMARY  (nearest real pools above/below price)
+  // ---------------------------------------------------------------
+  function liquiditySummary(exec, daily) {
+    const { swings, sweeps, equalHighs, equalLows, currentPrice } = exec;
+    const pools = [
+      ...swings.filter(s => s.type === 'high').map(s => ({ price: s.price, label: 'Swing High' })),
+      ...swings.filter(s => s.type === 'low').map(s => ({ price: s.price, label: 'Swing Low' })),
+      ...equalHighs.map(e => ({ price: e.level, label: 'Equal Highs' })),
+      ...equalLows.map(e => ({ price: e.level, label: 'Equal Lows' }))
+    ];
+    if (daily) {
+      if (daily.prevDayHigh) pools.push({ price: daily.prevDayHigh, label: 'Prev Day High' });
+      if (daily.prevDayLow) pools.push({ price: daily.prevDayLow, label: 'Prev Day Low' });
+      if (daily.dayHigh) pools.push({ price: daily.dayHigh, label: 'Daily High' });
+      if (daily.dayLow) pools.push({ price: daily.dayLow, label: 'Daily Low' });
+    }
+    const buySide = pools.filter(p => p.price > currentPrice).sort((a, b) => a.price - b.price);
+    const sellSide = pools.filter(p => p.price < currentPrice).sort((a, b) => b.price - a.price);
+    const lastSweep = sweeps[sweeps.length - 1];
+
+    return {
+      nearestBuySide: buySide[0] ? { ...buySide[0], distance: +(buySide[0].price - currentPrice).toFixed(2) } : null,
+      nearestSellSide: sellSide[0] ? { ...sellSide[0], distance: +(currentPrice - sellSide[0].price).toFixed(2) } : null,
+      lastSweep: lastSweep ? {
+        type: lastSweep.type,
+        level: lastSweep.level,
+        description: lastSweep.type === 'buy-side-grab' ? 'Sell-side liquidity swept' : 'Buy-side liquidity swept'
+      } : null,
+      buySidePools: buySide.slice(0, 6),
+      sellSidePools: sellSide.slice(0, 6)
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // SETUP SCORING  (0-100 -> A+ / A / B / C / NO_TRADE)
+  // ---------------------------------------------------------------
+  function scoreSetup({ sweepOk, dispOk, bosOk, zonePresent, zoneOk, rr1, newsRiskHigh }) {
+    let score = 0;
+    if (sweepOk) score += 20;
+    if (dispOk) score += 20;
+    if (bosOk) score += 20;
+    if (zonePresent) score += 15;
+    if (zoneOk) score += 15;
+    if (rr1 !== null && rr1 !== undefined) {
+      if (rr1 >= 2) score += 10;
+      else if (rr1 >= 1.5) score += 5;
+    }
+    if (newsRiskHigh) score = Math.max(0, score - 25);
+
+    let grade;
+    if (newsRiskHigh) grade = 'NO_TRADE';
+    else if (score >= 90) grade = 'Aplus';
+    else if (score >= 75) grade = 'A';
+    else if (score >= 50) grade = 'B';
+    else if (score >= 25) grade = 'C';
+    else grade = 'NO_TRADE';
+
+    return { score, grade };
   }
 
   return {
@@ -465,6 +543,8 @@ const SMC = (() => {
     htfBias,
     analyzeCandles,
     buildScenarios,
+    liquiditySummary,
+    scoreSetup,
     generateSignal
   };
 })();

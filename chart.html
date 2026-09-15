@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Chart</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+<style>#tv-chart-full { height: calc(100vh - var(--topbar-height) - var(--statusbar-height) - 90px); min-height: 420px; }</style>
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">📈 Chart</div>
+  <div class="panel chart-panel">
+    <div class="chart-panel__head">
+      <div class="tf-group" id="tf-group">
+        <button class="tf-btn" data-tf="1">1m</button>
+        <button class="tf-btn" data-tf="5">5m</button>
+        <button class="tf-btn active" data-tf="15">15m</button>
+        <button class="tf-btn" data-tf="60">1H</button>
+        <button class="tf-btn" data-tf="240">4H</button>
+        <button class="tf-btn" data-tf="D">1D</button>
+      </div>
+    </div>
+    <div id="tv-chart-full"></div>
+  </div>
+  <p class="page-subtitle">This is the TradingView chart widget (visual reference). Entry/SL/TP levels shown on the Trade Setups and AI Analysis pages come from the deterministic engine reading real candles — the widget itself doesn't support drawing those overlays without a paid Charting Library.</p>
+</div>
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('chart');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+function mountChart(interval) {
+  document.getElementById('tv-chart-full').innerHTML = '';
+  new TradingView.widget({
+    autosize: true, symbol: 'OANDA:XAUUSD', interval, timezone: 'Etc/UTC', theme: 'dark', style: '1',
+    locale: 'en', toolbar_bg: '#14161A', enable_publishing: false, hide_top_toolbar: false, hide_legend: false,
+    save_image: false, container_id: 'tv-chart-full', backgroundColor: '#14161A', gridColor: 'rgba(255,255,255,0.05)'
+  });
+}
+mountChart('15');
+document.getElementById('tf-group').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tf-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  mountChart(btn.dataset.tf);
+});
+</script>
+</body>
+</html>

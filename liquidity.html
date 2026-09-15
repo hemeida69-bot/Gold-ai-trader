@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Liquidity</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">💧 Liquidity Map</div>
+  <div class="page-subtitle">Resting liquidity pools around current price on the execution timeframe (M5) — real swing/equal levels, never invented.</div>
+  <button class="analyze-btn" id="analyze-btn">🧠 REFRESH LIQUIDITY MAP</button>
+
+  <div class="scenario-grid" style="grid-template-columns:1fr 1fr;">
+    <div class="compact-card">
+      <h3>Buy-side Liquidity (above price)</h3>
+      <div id="buyside-list" class="empty-state">Run an analysis first.</div>
+    </div>
+    <div class="compact-card">
+      <h3>Sell-side Liquidity (below price)</h3>
+      <div id="sellside-list" class="empty-state">Run an analysis first.</div>
+    </div>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Summary</h2>
+    <div id="summary-body" class="empty-state">Run an analysis first.</div>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · Liquidity Map</footer>
+</div>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('liquidity');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+function row(p) { return `<div class="liquidity-row"><span>${p.label}</span><span class="val">${p.price.toFixed(2)}</span></div>`; }
+
+async function run() {
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true; btn.textContent = 'LOADING…';
+  try {
+    const structureByTF = await MarketData.fetchAndAnalyzeAll();
+    if (!structureByTF) {
+      document.getElementById('summary-body').textContent = 'LIVE DATA UNAVAILABLE — check API key / rate limit.';
+      return;
+    }
+    const exec = structureByTF.M5;
+    const daily = await MarketData.fetchJSON('/api/market-data?type=daily').then(d => d.candles ? SMC.dailyLevels(d.candles) : null);
+    const liq = SMC.liquiditySummary(exec, daily);
+
+    document.getElementById('buyside-list').innerHTML = liq.buySidePools.length
+      ? liq.buySidePools.map(row).join('') : '<div class="empty-state">None detected nearby.</div>';
+    document.getElementById('sellside-list').innerHTML = liq.sellSidePools.length
+      ? liq.sellSidePools.map(row).join('') : '<div class="empty-state">None detected nearby.</div>';
+
+    document.getElementById('summary-body').innerHTML = `
+      <div class="liquidity-row"><span>Current price</span><span class="val">${exec.currentPrice.toFixed(2)}</span></div>
+      <div class="liquidity-row"><span>Nearest buy-side</span><span class="val">${liq.nearestBuySide ? `${liq.nearestBuySide.price.toFixed(2)} (${liq.nearestBuySide.label}, +${liq.nearestBuySide.distance.toFixed(2)})` : '—'}</span></div>
+      <div class="liquidity-row"><span>Nearest sell-side</span><span class="val">${liq.nearestSellSide ? `${liq.nearestSellSide.price.toFixed(2)} (${liq.nearestSellSide.label}, -${liq.nearestSellSide.distance.toFixed(2)})` : '—'}</span></div>
+      <div class="liquidity-row"><span>Last sweep</span><span class="val">${liq.lastSweep ? `${liq.lastSweep.description} @ ${liq.lastSweep.level.toFixed(2)}` : 'None recent'}</span></div>`;
+    Layout.setStatusBar({ lastUpdateText: 'just now', apiOk: true });
+  } finally {
+    btn.disabled = false; btn.textContent = '🧠 REFRESH LIQUIDITY MAP';
+  }
+}
+document.getElementById('analyze-btn').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>

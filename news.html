@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — News & Macro</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">📰 News & Macro</div>
+  <div class="page-subtitle">DXY / US10Y are live where the data provider supports them. The economic calendar (FOMC, CPI, NFP, etc.) is not wired to a live feed yet — see the note below.</div>
+
+  <div class="scenario-grid" style="grid-template-columns:1fr 1fr;">
+    <div class="compact-card">
+      <h3>DXY (US Dollar Index)</h3>
+      <div class="mini-field"><div class="value" id="dxy-value" style="font-size:22px;">—</div></div>
+      <div class="empty-state" style="margin-top:6px;">A weaker dollar tends to support Gold and a stronger dollar tends to pressure it — but price action confirmation always matters more than this alone.</div>
+    </div>
+    <div class="compact-card">
+      <h3>US10Y (10-Year Yield)</h3>
+      <div class="mini-field"><div class="value" id="us10y-value" style="font-size:22px;">—</div></div>
+      <div class="empty-state" style="margin-top:6px;">Rising real yields tend to pressure Gold (higher opportunity cost); falling yields tend to support it.</div>
+    </div>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Next high-impact event</h2>
+    <div id="event-body" class="empty-state">Loading…</div>
+    <p style="font-size:12px; color:var(--text-dim); margin-top:10px;">
+      There's no free, reliable economic-calendar API wired in yet, so this is entered manually
+      in <a class="nav-link" href="settings.html">Settings</a> rather than guessed. Once you
+      enter an event and time, this page and the Setup Score both honestly account for it —
+      nothing here is invented.
+    </p>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Tracked categories (manual reference)</h2>
+    <ul class="narrative-list">
+      <li>FOMC / Fed Rate Decision / Powell / Fed speakers</li>
+      <li>CPI / Core CPI / PCE / Core PCE</li>
+      <li>NFP / Unemployment / Jobless Claims</li>
+      <li>Retail Sales / GDP / ISM / PMI</li>
+      <li>Major geopolitical risk events</li>
+    </ul>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · News & Macro</footer>
+</div>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('news');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+async function load() {
+  const [dxy, us10y] = await Promise.all([MarketData.fetchDXY(), MarketData.fetchUS10Y()]);
+  document.getElementById('dxy-value').textContent = (dxy && dxy.available) ? dxy.price.toFixed(2) : 'N/A';
+  document.getElementById('us10y-value').textContent = (us10y && us10y.available) ? us10y.price.toFixed(2) : 'N/A';
+
+  const risk = MarketData.getNewsRisk();
+  const box = document.getElementById('event-body');
+  if (!risk.configured) {
+    box.innerHTML = 'No event configured yet.';
+  } else {
+    const when = new Date(risk.event.time).toLocaleString();
+    box.innerHTML = risk.high
+      ? `<div class="news-risk-banner high">⚠️ HIGH IMPACT: ${risk.event.name} — ${when} (in ${risk.minutesUntil} min)</div>`
+      : `<div class="news-risk-banner low">${risk.event.name} — ${when}${risk.minutesUntil >= 0 ? ` (in ${risk.minutesUntil} min)` : ' (past)'}</div>`;
+  }
+  Layout.setStatusBar({ apiOk: true, lastUpdateText: 'just now' });
+}
+load();
+</script>
+</body>
+</html>

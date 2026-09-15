@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Settings</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">⚙️ Settings</div>
+
+  <div class="panel narrative-panel">
+    <h2>Next high-impact event (for News Risk)</h2>
+    <div class="settings-form">
+      <div class="settings-row"><label>Event name</label><input type="text" id="s-event-name" placeholder="e.g. FOMC Rate Decision" /></div>
+      <div class="settings-row"><label>Date & time (your local time)</label><input type="datetime-local" id="s-event-time" /></div>
+      <div class="settings-row"><label>Warning window (minutes before)</label><input type="number" id="s-window" value="60" min="5" /></div>
+      <div style="display:flex; gap:8px;">
+        <button class="small-btn" id="s-save-event">Save</button>
+        <button class="small-btn secondary" id="s-clear-event">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Fed context (manual)</h2>
+    <div class="settings-form">
+      <div class="settings-row"><label>Current Fed Funds Rate</label><input type="text" id="s-fed-rate" placeholder="e.g. 4.25%–4.50%" /></div>
+      <div class="settings-row"><label>Next FOMC date</label><input type="text" id="s-fed-fomc" placeholder="e.g. Dec 17-18, 2026" /></div>
+      <div class="settings-row"><label>Bias</label>
+        <select id="s-fed-bias"><option>Neutral</option><option>Hawkish</option><option>Dovish</option></select>
+      </div>
+      <div class="settings-row"><label>Notes</label><input type="text" id="s-fed-notes" placeholder="optional" /></div>
+      <button class="small-btn" id="s-save-fed">Save</button>
+    </div>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Trading defaults</h2>
+    <div class="settings-form">
+      <div class="settings-row"><label>Default chart timeframe</label>
+        <select id="s-default-tf"><option value="15">15m</option><option value="5">5m</option><option value="60">1H</option><option value="240">4H</option><option value="D">1D</option></select>
+      </div>
+      <div class="settings-row"><label>Default risk %</label>
+        <select id="s-default-risk"><option value="0.25">0.25%</option><option value="0.5" selected>0.5%</option><option value="1">1%</option></select>
+      </div>
+      <div class="settings-row"><label>Minimum RR for a Primary setup</label><input type="number" id="s-min-rr" value="2" step="0.1" min="0" /></div>
+      <div class="settings-row toggle-row">
+        <label>Auto-refresh analysis (every 3 min)</label>
+        <button class="toggle-switch" id="s-toggle-autorefresh"><span class="knob"></span></button>
+      </div>
+      <button class="small-btn" id="s-save-defaults">Save</button>
+    </div>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · Settings</footer>
+</div>
+<script src="layout.js"></script>
+<script>
+Layout.mount('settings');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+// --- News event ---
+function loadEvent() {
+  const raw = localStorage.getItem('goldAiTrader.nextHighImpactEvent');
+  if (raw) {
+    try {
+      const e = JSON.parse(raw);
+      document.getElementById('s-event-name').value = e.name || '';
+      document.getElementById('s-event-time').value = e.time ? e.time.slice(0, 16) : '';
+    } catch (err) {}
+  }
+  document.getElementById('s-window').value = localStorage.getItem('goldAiTrader.newsWarningMinutes') || '60';
+}
+document.getElementById('s-save-event').addEventListener('click', () => {
+  const name = document.getElementById('s-event-name').value.trim();
+  const time = document.getElementById('s-event-time').value;
+  if (name && time) {
+    localStorage.setItem('goldAiTrader.nextHighImpactEvent', JSON.stringify({ name, time: new Date(time).toISOString() }));
+  }
+  localStorage.setItem('goldAiTrader.newsWarningMinutes', document.getElementById('s-window').value);
+});
+document.getElementById('s-clear-event').addEventListener('click', () => {
+  localStorage.removeItem('goldAiTrader.nextHighImpactEvent');
+  document.getElementById('s-event-name').value = '';
+  document.getElementById('s-event-time').value = '';
+});
+
+// --- Fed context ---
+function loadFed() {
+  const raw = localStorage.getItem('goldAiTrader.fedContext');
+  if (!raw) return;
+  try {
+    const f = JSON.parse(raw);
+    document.getElementById('s-fed-rate').value = f.rate || '';
+    document.getElementById('s-fed-fomc').value = f.nextFomc || '';
+    document.getElementById('s-fed-bias').value = f.bias || 'Neutral';
+    document.getElementById('s-fed-notes').value = f.notes || '';
+  } catch (e) {}
+}
+document.getElementById('s-save-fed').addEventListener('click', () => {
+  localStorage.setItem('goldAiTrader.fedContext', JSON.stringify({
+    rate: document.getElementById('s-fed-rate').value,
+    nextFomc: document.getElementById('s-fed-fomc').value,
+    bias: document.getElementById('s-fed-bias').value,
+    notes: document.getElementById('s-fed-notes').value
+  }));
+});
+
+// --- Trading defaults ---
+function loadDefaults() {
+  document.getElementById('s-default-tf').value = localStorage.getItem('goldAiTrader.defaultTf') || '15';
+  document.getElementById('s-default-risk').value = localStorage.getItem('goldAiTrader.defaultRisk') || '0.5';
+  document.getElementById('s-min-rr').value = localStorage.getItem('goldAiTrader.minRR') || '2';
+  const auto = localStorage.getItem('goldAiTrader.autoRefresh') !== 'false';
+  document.getElementById('s-toggle-autorefresh').classList.toggle('on', auto);
+}
+document.getElementById('s-toggle-autorefresh').addEventListener('click', function () {
+  const isOn = this.classList.toggle('on');
+  localStorage.setItem('goldAiTrader.autoRefresh', String(isOn));
+});
+document.getElementById('s-save-defaults').addEventListener('click', () => {
+  localStorage.setItem('goldAiTrader.defaultTf', document.getElementById('s-default-tf').value);
+  localStorage.setItem('goldAiTrader.defaultRisk', document.getElementById('s-default-risk').value);
+  localStorage.setItem('goldAiTrader.minRR', document.getElementById('s-min-rr').value);
+});
+
+loadEvent(); loadFed(); loadDefaults();
+Layout.setStatusBar({ apiOk: true });
+</script>
+</body>
+</html>

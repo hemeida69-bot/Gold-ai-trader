@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Trade Journal</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">📔 Trade Journal</div>
+  <div class="page-subtitle">Quick local log for trades taken from this app. Stored on this device only.</div>
+
+  <div class="panel narrative-panel">
+    <div class="journal-form">
+      <input type="date" id="j-date" />
+      <input type="time" id="j-time" />
+      <select id="j-direction"><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+      <select id="j-setup"><option>Liquidity Sweep + BOS</option><option>FVG Retest</option><option>OB Retest</option><option>Other</option></select>
+      <input type="number" step="0.01" id="j-entry" placeholder="Entry" />
+      <input type="number" step="0.01" id="j-sl" placeholder="SL" />
+      <input type="number" step="0.01" id="j-tp" placeholder="TP" />
+      <input type="number" step="0.01" id="j-exit" placeholder="Exit (fill after close)" />
+      <input type="text" id="j-screenshot" placeholder="Screenshot URL (optional)" class="full" />
+      <textarea id="j-notes" placeholder="Notes / reason for entry / mistake"></textarea>
+    </div>
+    <button class="small-btn" id="j-add">Add Entry</button>
+  </div>
+
+  <div class="panel narrative-panel">
+    <table class="journal-table" id="journal-table">
+      <thead><tr><th>Date</th><th>Dir</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>RR</th><th>Setup</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · Trade Journal · local device only</footer>
+</div>
+<script src="layout.js"></script>
+<script>
+Layout.mount('journal');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+const KEY = 'goldAiTrader.journal';
+function load() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
+function save(entries) { localStorage.setItem(KEY, JSON.stringify(entries)); }
+
+function render() {
+  const entries = load().sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const tbody = document.querySelector('#journal-table tbody');
+  tbody.innerHTML = entries.map((e, i) => {
+    const rr = (e.entry && e.sl && e.tp) ? (Math.abs(e.tp - e.entry) / Math.abs(e.entry - e.sl)).toFixed(2) : '—';
+    return `<tr>
+      <td>${e.date} ${e.time || ''}</td>
+      <td class="${e.direction === 'BUY' ? 'dir-buy' : 'dir-sell'}">${e.direction}</td>
+      <td>${e.entry ?? '—'}</td><td>${e.sl ?? '—'}</td><td>${e.tp ?? '—'}</td><td>${e.exit ?? '—'}</td>
+      <td>${rr}</td><td>${e.setup}</td>
+      <td><button class="small-btn secondary" data-del="${i}" style="padding:4px 8px; font-size:11px;">✕</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9" class="empty-state">No entries yet.</td></tr>';
+
+  tbody.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
+    const idx = entries.indexOf(entries[parseInt(btn.dataset.del, 10)]);
+    const all = load();
+    const target = entries[parseInt(btn.dataset.del, 10)];
+    save(all.filter(e => e !== target));
+    render();
+  }));
+}
+
+document.getElementById('j-add').addEventListener('click', () => {
+  const entry = {
+    date: document.getElementById('j-date').value || new Date().toISOString().slice(0, 10),
+    time: document.getElementById('j-time').value,
+    direction: document.getElementById('j-direction').value,
+    setup: document.getElementById('j-setup').value,
+    entry: parseFloat(document.getElementById('j-entry').value) || null,
+    sl: parseFloat(document.getElementById('j-sl').value) || null,
+    tp: parseFloat(document.getElementById('j-tp').value) || null,
+    exit: parseFloat(document.getElementById('j-exit').value) || null,
+    screenshot: document.getElementById('j-screenshot').value,
+    notes: document.getElementById('j-notes').value
+  };
+  const entries = load();
+  entries.push(entry);
+  save(entries);
+  ['j-entry', 'j-sl', 'j-tp', 'j-exit', 'j-screenshot', 'j-notes'].forEach(id => document.getElementById(id).value = '');
+  render();
+});
+
+render();
+Layout.setStatusBar({ apiOk: true });
+</script>
+</body>
+</html>

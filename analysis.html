@@ -2,71 +2,71 @@
 <html lang="en" dir="ltr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>Gold AI Trader — Live Analysis</title>
-<meta name="description" content="XAUUSD live SMC/ICT narrative analysis" />
-
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — AI Analysis</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#0A0B0D" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Gold AI" />
-
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
 <div class="app-shell">
 
-  <section class="ticker" id="ticker">
-    <span class="ticker__symbol">XAUUSD</span>
-    <span class="ticker__price is-stale" id="price">— — —</span>
-    <span class="ticker__change" id="change"></span>
-    <div class="ticker__meta">
-      <span><span class="dot" id="market-dot"></span><strong id="market-status">—</strong></span>
-      <span>Session: <strong id="session">—</strong></span>
-      <span id="last-checked">Not analyzed yet</span>
-      <a class="nav-link" href="index.html">← Dashboard</a>
-    </div>
-  </section>
+  <div class="page-title">🧠 AI Analysis</div>
+  <div class="page-subtitle">Full professional read of XAUUSD — structured data first, plain-language explanation second. Nothing here is invented.</div>
 
-  <!-- ============ SIGNAL SUMMARY ============ -->
+  <button class="analyze-btn" id="analyze-btn">🧠 RUN LIVE ANALYSIS</button>
+
+  <!-- MARKET SUMMARY -->
   <div class="panel analysis-panel">
-    <button class="analyze-btn" id="analyze-btn">🧠 RUN LIVE ANALYSIS</button>
     <div class="signal-card" id="signal-card">
       <span class="signal-badge wait" id="signal-badge">WAIT</span>
       <div class="empty-state" id="signal-body">Press the button above to run a fresh analysis.</div>
     </div>
   </div>
 
-  <!-- ============ NARRATIVE: WHAT HAPPENED / WHAT'S EXPECTED ============ -->
+  <!-- NARRATIVE -->
   <div class="panel narrative-panel">
     <h2>What happened</h2>
     <ul class="narrative-list" id="narrative-happened"><li>Run an analysis to see the latest structure events.</li></ul>
-
-    <h2 style="margin-top:18px;">Timeframe bias</h2>
+    <h2 style="margin-top:18px;">Timeframe bias (D1 → H4 → H1 → M15, M5 execution)</h2>
     <div class="tf-bias-row" id="tf-bias-row"></div>
-
     <h2 style="margin-top:18px;">What's expected next</h2>
     <ul class="narrative-list" id="narrative-expected"><li>—</li></ul>
   </div>
 
-  <!-- ============ WATCH ZONES: entry / SL / TP for both directions ============ -->
+  <!-- LIQUIDITY -->
+  <div class="panel narrative-panel">
+    <h2>Liquidity</h2>
+    <div id="liquidity-body" class="empty-state">Run an analysis first.</div>
+  </div>
+
+  <!-- KEY ZONES / SCENARIOS -->
   <div class="panel narrative-panel">
     <h2>Key entry zones to watch</h2>
     <p style="margin-top:-4px; color:var(--text-dim); font-size:12.5px;">
-      These are the nearest real bullish/bearish zones on the execution timeframe (M15) —
-      shown whether or not a full signal has fired yet, so you can see where price would need
-      to react for a BUY or SELL to become valid. Not a live signal by itself.
+      Nearest real bullish/bearish zones on the execution timeframe (M5) — shown whether or
+      not a full signal has fired, so you can see where price would need to react.
     </p>
     <div class="scenario-grid" id="scenario-grid">
-      <div class="scenario-card bullish"><h3>🟢 If price sweeps down and reclaims…</h3><div class="scenario-empty">Run an analysis first.</div></div>
-      <div class="scenario-card bearish"><h3>🔴 If price sweeps up and rejects…</h3><div class="scenario-empty">Run an analysis first.</div></div>
+      <div class="scenario-card bullish"><h3>🟢 Bullish scenario</h3><div class="scenario-empty">Run an analysis first.</div></div>
+      <div class="scenario-card bearish"><h3>🔴 Bearish scenario</h3><div class="scenario-empty">Run an analysis first.</div></div>
     </div>
   </div>
 
-  <!-- ============ ALERTS ============ -->
+  <!-- MACRO -->
+  <div class="panel narrative-panel">
+    <h2>Macro</h2>
+    <div class="macro-strip">
+      <div class="macro-chip"><div class="label">DXY</div><div class="value" id="dxy-value">—</div></div>
+      <div class="macro-chip"><div class="label">US10Y</div><div class="value" id="us10y-value">—</div></div>
+    </div>
+    <div id="news-risk-body" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- ALERTS -->
   <div class="panel alert-panel">
     <h3 style="margin:0; font-size:14px; color:var(--text-dim); font-weight:600;">Setup Alerts</h3>
     <div class="alert-toggle">
@@ -77,21 +77,21 @@
       <button class="alert-toggle-btn" id="alert-toggle-btn">Enable</button>
     </div>
     <div class="empty-state">
-      Works while this page/app is open (checks every 3 minutes automatically) — it uses your
-      device's own notifications, nothing is sent through a server. For alerts that still arrive
-      when the app is fully closed, background push needs one more free service configured — ask
-      and it can be set up next.
+      Works while this page/app is open (checks every 3 minutes) using your device's own
+      notifications. For alerts that arrive with the app fully closed, background push needs
+      one more free service — ask and it can be added next.
     </div>
   </div>
 
-  <footer class="app-footer">Gold AI Trader · Live Analysis · Deterministic SMC/ICT engine, no fabricated data</footer>
+  <footer class="app-footer">Gold AI Trader · AI Analysis · Deterministic SMC/ICT engine, no fabricated data</footer>
 </div>
 
 <script src="smc-engine.js"></script>
 <script src="data.js"></script>
+<script src="layout.js"></script>
 <script src="analysis-page.js"></script>
-
 <script>
+Layout.mount('analysis');
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }

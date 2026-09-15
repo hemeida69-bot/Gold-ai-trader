@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Risk Calculator</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">🧮 Risk Calculator</div>
+  <div class="panel calc-panel">
+    <div class="calc-row">
+      <label for="calc-balance">Account balance (USD)</label>
+      <input type="number" id="calc-balance" value="1000" min="0" />
+    </div>
+    <div class="calc-row">
+      <label for="calc-risk">Risk %</label>
+      <select id="calc-risk">
+        <option value="0.25">0.25%</option>
+        <option value="0.5" selected>0.5%</option>
+        <option value="1">1%</option>
+      </select>
+    </div>
+    <div class="calc-row">
+      <label for="calc-entry">Entry price</label>
+      <input type="number" id="calc-entry" value="" placeholder="optional — for RR display" />
+    </div>
+    <div class="calc-row">
+      <label for="calc-sl">Stop-loss price (or distance in $)</label>
+      <input type="number" id="calc-sl" value="5" min="0" step="0.1" />
+    </div>
+    <div class="calc-row">
+      <label for="calc-tp">Take-profit price (optional)</label>
+      <input type="number" id="calc-tp" value="" placeholder="optional — for RR display" />
+    </div>
+    <div class="calc-result" id="calc-result">—</div>
+  </div>
+  <footer class="app-footer">Gold AI Trader · Risk Calculator</footer>
+</div>
+<script src="layout.js"></script>
+<script>
+Layout.mount('risk');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+function updateCalc() {
+  const balance = parseFloat(document.getElementById('calc-balance').value) || 0;
+  const riskPct = parseFloat(document.getElementById('calc-risk').value) || 0;
+  const entry = parseFloat(document.getElementById('calc-entry').value);
+  const slInput = parseFloat(document.getElementById('calc-sl').value) || 0;
+  const tp = parseFloat(document.getElementById('calc-tp').value);
+  const riskAmount = balance * (riskPct / 100);
+  const resultEl = document.getElementById('calc-result');
+
+  // If entry is given, treat SL field as a price; otherwise treat it as a raw $ distance.
+  const slDistance = (!isNaN(entry) && slInput > 0 && Math.abs(entry - slInput) < entry) ? Math.abs(entry - slInput) : slInput;
+
+  if (slDistance <= 0) {
+    resultEl.textContent = `Risk amount: $${riskAmount.toFixed(2)} · Enter a stop-loss to size the position`;
+    return;
+  }
+  const lots = riskAmount / (slDistance * 100); // XAUUSD: 1 standard lot = 100 oz
+  let rrText = '';
+  if (!isNaN(entry) && !isNaN(tp)) {
+    const reward = Math.abs(tp - entry);
+    const rr = slDistance > 0 ? (reward / slDistance).toFixed(2) : '—';
+    rrText = ` · RR 1:${rr} · Potential profit $${(reward * 100 * lots).toFixed(2)}`;
+  }
+  resultEl.textContent = `Risk amount: $${riskAmount.toFixed(2)} · Position size: ${lots.toFixed(2)} lots${rrText}`;
+}
+['calc-balance', 'calc-risk', 'calc-entry', 'calc-sl', 'calc-tp'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updateCalc)
+);
+updateCalc();
+Layout.setStatusBar({ apiOk: true });
+</script>
+</body>
+</html>

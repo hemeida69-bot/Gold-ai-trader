@@ -2,42 +2,6 @@
   'use strict';
 
   // ---------------------------------------------------------------
-  // Session + market status (shared with dashboard)
-  // ---------------------------------------------------------------
-  function renderSessionAndStatus() {
-    const now = new Date();
-    const sessions = SMC.currentSession(now.getUTCHours());
-    const status = SMC.marketStatus(now);
-    document.getElementById('session').textContent = sessions.length ? sessions.join(' / ') : 'Off-session';
-    const statusEl = document.getElementById('market-status');
-    const dotEl = document.getElementById('market-dot');
-    statusEl.textContent = status;
-    dotEl.className = 'dot ' + (status === 'OPEN' ? 'open' : 'closed');
-  }
-  renderSessionAndStatus();
-  setInterval(renderSessionAndStatus, 60 * 1000);
-
-  async function refreshTicker() {
-    const quote = await MarketData.fetchJSON('/api/market-data?type=quote');
-    const priceEl = document.getElementById('price');
-    const changeEl = document.getElementById('change');
-    if (quote.error) {
-      priceEl.textContent = '— — —';
-      priceEl.classList.add('is-stale');
-      changeEl.textContent = '';
-      return;
-    }
-    priceEl.textContent = quote.price.toFixed(2);
-    priceEl.classList.remove('is-stale');
-    if (!isNaN(quote.change)) {
-      changeEl.textContent = `${quote.change >= 0 ? '▲' : '▼'} ${Math.abs(quote.change).toFixed(2)}%`;
-      changeEl.className = 'ticker__change ' + (quote.change >= 0 ? 'up' : 'down');
-    }
-  }
-  refreshTicker();
-  setInterval(refreshTicker, 30 * 1000);
-
-  // ---------------------------------------------------------------
   // Narrative builders — plain-language sentences assembled from
   // structured engine output only. No invented facts, no AI call.
   // ---------------------------------------------------------------
@@ -64,12 +28,15 @@
     return items;
   }
 
-  function buildExpectedList(bias, exec, scenarios) {
+  function buildExpectedList(bias, exec, scenarios, newsRisk) {
     const items = [];
+    if (newsRisk.high) {
+      items.push(`⚠️ ${newsRisk.event.name} is in ${newsRisk.minutesUntil} minutes — treat any setup as lower quality until the event has passed and price has reacted.`);
+    }
     if (bias === 'mixed') {
-      items.push('Higher-timeframe bias is mixed right now — D1/H4/H1/M15 are not aligned, so no directional edge is favored yet. Wait for alignment before looking for entries.');
+      items.push('Higher-timeframe bias is mixed right now — D1/H4/H1/M15 are not aligned, so no directional edge is favored yet. Wait for alignment before looking for M5 entries.');
     } else {
-      items.push(`Higher-timeframe bias leans ${bias}. The execution timeframe (M15) is being watched for a liquidity sweep in that direction, followed by displacement and a break of structure, before any entry zone is considered valid.`);
+      items.push(`Higher-timeframe bias leans ${bias}. M5 (execution timeframe) is being watched for a liquidity sweep in that direction, followed by displacement and a break of structure, before any entry zone is considered valid.`);
     }
     if (bias === 'bullish' && scenarios.bullish) {
       items.push(`Nearest bullish zone to watch: ${scenarios.bullish.entryZone.bottom.toFixed(2)}–${scenarios.bullish.entryZone.top.toFixed(2)} (${scenarios.bullish.zoneType}).`);
@@ -89,19 +56,27 @@
     }).join('');
   }
 
+  function renderLiquidity(liq) {
+    const el = document.getElementById('liquidity-body');
+    el.innerHTML = `
+      <div class="liquidity-row"><span>Nearest buy-side liquidity</span><span class="val">${liq.nearestBuySide ? `${liq.nearestBuySide.price.toFixed(2)} (${liq.nearestBuySide.label}, +${liq.nearestBuySide.distance.toFixed(2)})` : '—'}</span></div>
+      <div class="liquidity-row"><span>Nearest sell-side liquidity</span><span class="val">${liq.nearestSellSide ? `${liq.nearestSellSide.price.toFixed(2)} (${liq.nearestSellSide.label}, -${liq.nearestSellSide.distance.toFixed(2)})` : '—'}</span></div>
+      <div class="liquidity-row"><span>Last sweep</span><span class="val">${liq.lastSweep ? `${liq.lastSweep.description} @ ${liq.lastSweep.level.toFixed(2)}` : 'None recent'}</span></div>`;
+  }
+
   function renderScenarioCard(el, scenario, direction) {
     if (!scenario) {
-      el.innerHTML = `<h3>${direction === 'bullish' ? '🟢 Bullish scenario' : '🔴 Bearish scenario'}</h3><div class="scenario-empty">No qualifying ${direction} zone found below/above current price right now.</div>`;
+      el.innerHTML = `<h3>${direction === 'bullish' ? '🟢 Bullish scenario' : '🔴 Bearish scenario'}</h3><div class="scenario-empty">No qualifying ${direction} zone found right now.</div>`;
       return;
     }
     el.innerHTML = `
       <h3>${direction === 'bullish' ? '🟢 If price reaches the buy zone' : '🔴 If price reaches the sell zone'}</h3>
-      <div class="scenario-condition">Zone type: ${scenario.zoneType} — this is where price would need to react for a ${direction} entry to make sense, not a live signal.</div>
-      <div class="trade-grid">
-        <div class="trade-field"><div class="label">Entry Zone</div><div class="value">${scenario.entryZone.bottom.toFixed(2)} – ${scenario.entryZone.top.toFixed(2)}</div></div>
-        <div class="trade-field"><div class="label">Stop Loss</div><div class="value">${scenario.stopLoss.toFixed(2)}</div></div>
-        <div class="trade-field"><div class="label">TP1${scenario.rr1 ? ` (${scenario.rr1}R)` : ''}</div><div class="value">${scenario.tp1 ? scenario.tp1.toFixed(2) : '—'}</div></div>
-        <div class="trade-field"><div class="label">TP2</div><div class="value">${scenario.tp2 ? scenario.tp2.toFixed(2) : '—'}</div></div>
+      <div class="scenario-condition">Zone type: ${scenario.zoneType} — where price would need to react for a ${direction} entry to make sense, not a live signal.</div>
+      <div class="mini-grid">
+        <div class="mini-field"><div class="label">Entry</div><div class="value">${scenario.entryZone.bottom.toFixed(2)}–${scenario.entryZone.top.toFixed(2)}</div></div>
+        <div class="mini-field"><div class="label">SL</div><div class="value">${scenario.stopLoss.toFixed(2)}</div></div>
+        <div class="mini-field"><div class="label">TP1${scenario.rr1 ? ` (${scenario.rr1}R)` : ''}</div><div class="value">${scenario.tp1 ? scenario.tp1.toFixed(2) : '—'}</div></div>
+        <div class="mini-field"><div class="label">TP2</div><div class="value">${scenario.tp2 ? scenario.tp2.toFixed(2) : '—'}</div></div>
       </div>`;
   }
 
@@ -109,9 +84,9 @@
     const badge = document.getElementById('signal-badge');
     const body = document.getElementById('signal-body');
     badge.className = 'signal-badge ' + result.signal.toLowerCase();
-    badge.textContent = result.signal === 'WAIT' ? 'WAIT / NO TRADE' : result.signal;
+    badge.textContent = result.signal === 'WAIT' ? (result.waitState === 'WAIT_FOR_BUY' ? 'WAIT FOR BUY' : result.waitState === 'WAIT_FOR_SELL' ? 'WAIT FOR SELL' : 'WAIT / NO TRADE') : (result.signal === 'AVOID' ? 'AVOID — HIGH IMPACT NEWS' : result.signal);
 
-    let html = '';
+    let html = `<div style="margin-bottom:8px; font-size:12.5px; color:var(--text-dim);">Setup Score: <strong style="color:var(--text)">${result.setupScore}/100</strong> · Grade: <strong style="color:var(--text)">${result.grade}</strong></div>`;
     if (result.signal === 'BUY' || result.signal === 'SELL') {
       html += `<div class="trade-grid">
         <div class="trade-field"><div class="label">Entry Zone</div><div class="value">${result.entryZone.bottom.toFixed(2)} – ${result.entryZone.top.toFixed(2)}</div></div>
@@ -119,13 +94,29 @@
         <div class="trade-field"><div class="label">TP1${result.rr1 ? ` (${result.rr1}R)` : ''}</div><div class="value">${result.tp1 ? result.tp1.toFixed(2) : '—'}</div></div>
         <div class="trade-field"><div class="label">TP2${result.rr2 ? ` (${result.rr2}R)` : ''}</div><div class="value">${result.tp2 ? result.tp2.toFixed(2) : '—'}</div></div>
         <div class="trade-field"><div class="label">Confidence</div><div class="value">${result.confidence}%</div></div>
-      </div><div class="confidence-bar"><div class="confidence-bar__fill" style="width:${result.confidence}%"></div></div>`;
+      </div>
+      <div class="trigger-line">Trigger: ${result.trigger}</div>
+      <div class="invalidation-line">Invalidation: ${result.invalidationText}</div>
+      <div class="confidence-bar" style="margin-top:10px;"><div class="confidence-bar__fill" style="width:${result.confidence}%"></div></div>`;
     } else {
       html += `<div class="confidence-bar"><div class="confidence-bar__fill" style="width:${result.confidence}%"></div></div>`;
     }
     html += `<ul class="reason-list">${result.reasons.map(r => `<li>${r}</li>`).join('')}</ul>`;
     body.innerHTML = html;
   }
+
+  async function renderMacro() {
+    const [dxy, us10y] = await Promise.all([MarketData.fetchDXY(), MarketData.fetchUS10Y()]);
+    document.getElementById('dxy-value').textContent = (dxy && dxy.available) ? dxy.price.toFixed(2) : 'N/A';
+    document.getElementById('us10y-value').textContent = (us10y && us10y.available) ? us10y.price.toFixed(2) : 'N/A';
+    const risk = MarketData.getNewsRisk();
+    const box = document.getElementById('news-risk-body');
+    if (!risk.configured) box.innerHTML = `<div class="news-risk-banner low">No high-impact event configured — set one in Settings.</div>`;
+    else if (risk.high) box.innerHTML = `<div class="news-risk-banner high">⚠️ HIGH IMPACT NEWS — ${risk.event.name} in ${risk.minutesUntil} min</div>`;
+    else box.innerHTML = `<div class="news-risk-banner low">Next high-impact event: ${risk.event.name}</div>`;
+    return risk;
+  }
+  renderMacro();
 
   // ---------------------------------------------------------------
   // Main analysis run
@@ -134,7 +125,7 @@
 
   async function runAnalysis({ silent = false } = {}) {
     const btn = document.getElementById('analyze-btn');
-    if (!silent) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+    if (!silent) { btn.disabled = true; btn.textContent = 'ANALYZING GOLD…'; }
 
     try {
       const structureByTF = await MarketData.fetchAndAnalyzeAll();
@@ -145,8 +136,10 @@
         return null;
       }
 
-      const bias = SMC.htfBias(structureByTF);
-      const exec = structureByTF.M15;
+      const bias = SMC.htfBias({ D1: structureByTF.D1, H4: structureByTF.H4, H1: structureByTF.H1, M15: structureByTF.M15 });
+      const exec = structureByTF.M5;
+      const news = MarketData.getNewsRisk();
+
       const result = SMC.generateSignal({
         bias,
         sweeps: exec.sweeps,
@@ -156,17 +149,21 @@
         orderBlocks: exec.orderBlocks,
         pd: exec.pd,
         currentPrice: exec.currentPrice,
-        swings: exec.swings
+        swings: exec.swings,
+        newsRiskHigh: news.high
       });
       const scenarios = SMC.buildScenarios(exec);
+      const daily = await MarketData.fetchJSON('/api/market-data?type=daily').then(d => d.candles ? SMC.dailyLevels(d.candles) : null);
+      const liq = SMC.liquiditySummary(exec, daily);
 
       renderSignalCard(result);
       document.getElementById('narrative-happened').innerHTML = buildHappenedList(structureByTF).map(t => `<li>${t}</li>`).join('');
-      document.getElementById('narrative-expected').innerHTML = buildExpectedList(bias, exec, scenarios).map(t => `<li>${t}</li>`).join('');
+      document.getElementById('narrative-expected').innerHTML = buildExpectedList(bias, exec, scenarios, news).map(t => `<li>${t}</li>`).join('');
       renderTFBiasChips(structureByTF);
+      renderLiquidity(liq);
       renderScenarioCard(document.querySelector('.scenario-card.bullish'), scenarios.bullish, 'bullish');
       renderScenarioCard(document.querySelector('.scenario-card.bearish'), scenarios.bearish, 'bearish');
-      document.getElementById('last-checked').textContent = `Last checked: ${new Date().toLocaleTimeString()}`;
+      Layout.setStatusBar({ lastUpdateText: 'just now' });
 
       lastResult = result;
       return result;
@@ -176,13 +173,11 @@
   }
 
   document.getElementById('analyze-btn').addEventListener('click', () => runAnalysis());
+  runAnalysis();
 
   // ---------------------------------------------------------------
-  // Setup alerts — Notification API, works while this page/app is
-  // open (foreground or briefly backgrounded). Polls every 3 minutes.
-  // For alerts when the app is fully closed, real background push
-  // needs a small server-side piece (VAPID + subscription storage +
-  // an external scheduler) — not wired up here; ask to add it.
+  // Setup alerts — Notification API (see README for the closed-app
+  // background-push limitation and what a real fix would need).
   // ---------------------------------------------------------------
   const ALERT_KEY = 'goldAiTrader.alertsEnabled';
   const LAST_SIGNAL_KEY = 'goldAiTrader.lastAlertedSignal';
@@ -204,8 +199,8 @@
       if (result.signal === 'BUY' || result.signal === 'SELL') {
         const signature = `${result.signal}:${result.entryZone.top.toFixed(2)}:${result.entryZone.bottom.toFixed(2)}`;
         if (localStorage.getItem(LAST_SIGNAL_KEY) !== signature && Notification.permission === 'granted') {
-          new Notification(`Gold AI Trader — ${result.signal} setup`, {
-            body: `Entry ${result.entryZone.bottom.toFixed(2)}–${result.entryZone.top.toFixed(2)} · SL ${result.invalidation.toFixed(2)} · Confidence ${result.confidence}%`,
+          new Notification(`Gold AI Trader — ${result.signal} setup (${result.grade})`, {
+            body: `Entry ${result.entryZone.bottom.toFixed(2)}–${result.entryZone.top.toFixed(2)} · SL ${result.invalidation.toFixed(2)} · Score ${result.setupScore}/100`,
             icon: 'icons/icon-192.png'
           });
           localStorage.setItem(LAST_SIGNAL_KEY, signature);
@@ -236,7 +231,6 @@
     startAlertPolling();
   });
 
-  // Restore alert state on load
   if (localStorage.getItem(ALERT_KEY) === 'true' && 'Notification' in window && Notification.permission === 'granted') {
     setAlertUI(true);
     startAlertPolling();

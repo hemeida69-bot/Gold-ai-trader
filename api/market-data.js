@@ -26,6 +26,13 @@
 const BASE = 'https://api.twelvedata.com';
 const SYMBOL = 'XAU/USD';
 
+// Best-effort macro symbols on Twelve Data's free tier. Coverage for
+// indices/yields varies by plan — if a symbol below isn't available on
+// your key, this endpoint returns an honest error instead of a fake
+// number; adjust the symbol strings here once you've confirmed what
+// your Twelve Data plan actually supports.
+const MACRO_SYMBOLS = { dxy: 'DXY', us10y: 'US10Y' };
+
 module.exports = async (req, res) => {
   const apiKey = process.env.MARKET_DATA_API_KEY;
 
@@ -40,6 +47,29 @@ module.exports = async (req, res) => {
   const { type = 'quote', interval = '5min' } = req.query;
 
   try {
+    if (type === 'dxy' || type === 'us10y') {
+      const symbol = MACRO_SYMBOLS[type];
+      const url = `${BASE}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+      const upstream = await fetch(url);
+      const q = await upstream.json();
+
+      if (q.status === 'error' || q.code) {
+        return res.status(200).json({
+          error: `${symbol} not available from the current provider/plan.`,
+          detail: q.message || q,
+          available: false
+        });
+      }
+
+      return res.status(200).json({
+        symbol,
+        price: parseFloat(q.close),
+        change: parseFloat(q.percent_change),
+        time: q.datetime,
+        available: true
+      });
+    }
+
     if (type === 'quote') {
       const url = `${BASE}/quote?symbol=${encodeURIComponent(SYMBOL)}&apikey=${apiKey}`;
       const upstream = await fetch(url);
@@ -84,7 +114,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({ symbol: 'XAUUSD', interval: tdInterval, candles });
     }
 
-    return res.status(400).json({ error: 'Unknown type. Use quote | intraday | daily.' });
+    return res.status(400).json({ error: 'Unknown type. Use quote | intraday | daily | dxy | us10y.' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to reach market data provider.', detail: String(err) });
   }

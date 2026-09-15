@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — Trade Setups</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">🎯 Trade Setups</div>
+  <div class="page-subtitle">Primary setup with Setup Score, plus the alternative scenario if one exists. Never forced.</div>
+  <button class="analyze-btn" id="analyze-btn">🧠 GENERATE SETUPS</button>
+
+  <div class="panel analysis-panel">
+    <h3 style="margin:0 0 6px; font-size:13px; color:var(--text-dim); text-transform:uppercase;">Primary Setup</h3>
+    <div class="signal-card" id="primary-card">
+      <span class="signal-badge wait" id="primary-badge">WAIT</span>
+      <div class="empty-state" id="primary-body">Run an analysis first.</div>
+    </div>
+  </div>
+
+  <div class="panel analysis-panel">
+    <h3 style="margin:0 0 6px; font-size:13px; color:var(--text-dim); text-transform:uppercase;">Alternative Scenario</h3>
+    <div id="alt-body" class="empty-state">Run an analysis first.</div>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · Trade Setups</footer>
+</div>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('setups');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+function renderPrimary(result) {
+  const badge = document.getElementById('primary-badge');
+  const body = document.getElementById('primary-body');
+  badge.className = 'signal-badge ' + (result.signal === 'AVOID' ? 'wait' : result.signal.toLowerCase());
+  badge.textContent = result.signal === 'WAIT' ? (result.waitState === 'WAIT_FOR_BUY' ? 'WAIT FOR BUY' : result.waitState === 'WAIT_FOR_SELL' ? 'WAIT FOR SELL' : 'WAIT — NO A+ SETUP') : (result.signal === 'AVOID' ? 'AVOID — HIGH IMPACT NEWS' : result.signal);
+
+  let html = `<div style="margin-bottom:8px; font-size:12.5px; color:var(--text-dim);">Setup Score: <strong style="color:var(--text)">${result.setupScore}/100</strong> · Grade: <strong style="color:var(--text)">${result.grade}</strong> · Confidence: <strong style="color:var(--text)">${result.confidence}%</strong></div>`;
+  if (result.signal === 'BUY' || result.signal === 'SELL') {
+    html += `<div class="trade-grid">
+      <div class="trade-field"><div class="label">Entry Zone</div><div class="value">${result.entryZone.bottom.toFixed(2)} – ${result.entryZone.top.toFixed(2)}</div></div>
+      <div class="trade-field"><div class="label">SL</div><div class="value">${result.invalidation.toFixed(2)}</div></div>
+      <div class="trade-field"><div class="label">TP1${result.rr1 ? ` (${result.rr1}R)` : ''}</div><div class="value">${result.tp1 ? result.tp1.toFixed(2) : '—'}</div></div>
+      <div class="trade-field"><div class="label">TP2${result.rr2 ? ` (${result.rr2}R)` : ''}</div><div class="value">${result.tp2 ? result.tp2.toFixed(2) : '—'}</div></div>
+    </div>
+    <div class="trigger-line">Trigger: ${result.trigger}</div>
+    <div class="invalidation-line">Invalidation: ${result.invalidationText}</div>`;
+  }
+  html += `<div style="margin-top:10px; font-size:12px; color:var(--text-dim);">WHY?</div><ul class="reason-list">${result.reasons.map(r => `<li>${r}</li>`).join('')}</ul>`;
+  if (result.signal === 'WAIT') {
+    html += `<div style="margin-top:8px; font-size:12px; color:var(--text-dim);">WHAT TO WAIT FOR: the ❌ items above need to flip to ✅ before this becomes a valid setup.</div>`;
+  }
+  body.innerHTML = html;
+}
+
+function renderAlternative(scenarios, primaryBias) {
+  const el = document.getElementById('alt-body');
+  const altDirection = primaryBias === 'bullish' ? 'bearish' : 'bullish';
+  const alt = scenarios[altDirection];
+  if (!alt) { el.innerHTML = '<div class="empty-state">No valid opposite scenario right now — not invented.</div>'; return; }
+  el.innerHTML = `
+    <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">${altDirection === 'bullish' ? 'BUY' : 'SELL'} ONLY IF price reaches this zone and confirms with a matching M5 BOS + displacement:</div>
+    <div class="trade-grid">
+      <div class="trade-field"><div class="label">Entry Zone</div><div class="value">${alt.entryZone.bottom.toFixed(2)} – ${alt.entryZone.top.toFixed(2)}</div></div>
+      <div class="trade-field"><div class="label">SL</div><div class="value">${alt.stopLoss.toFixed(2)}</div></div>
+      <div class="trade-field"><div class="label">TP1${alt.rr1 ? ` (${alt.rr1}R)` : ''}</div><div class="value">${alt.tp1 ? alt.tp1.toFixed(2) : '—'}</div></div>
+      <div class="trade-field"><div class="label">TP2</div><div class="value">${alt.tp2 ? alt.tp2.toFixed(2) : '—'}</div></div>
+    </div>`;
+}
+
+async function run() {
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true; btn.textContent = 'GENERATING…';
+  try {
+    const structureByTF = await MarketData.fetchAndAnalyzeAll();
+    if (!structureByTF) {
+      document.getElementById('primary-body').textContent = 'LIVE DATA UNAVAILABLE — check API key / rate limit.';
+      return;
+    }
+    const bias = SMC.htfBias({ D1: structureByTF.D1, H4: structureByTF.H4, H1: structureByTF.H1, M15: structureByTF.M15 });
+    const exec = structureByTF.M5;
+    const news = MarketData.getNewsRisk();
+    const result = SMC.generateSignal({
+      bias, sweeps: exec.sweeps, displacements: exec.displacements, structureEvents: exec.events,
+      fvgs: exec.fvgs, orderBlocks: exec.orderBlocks, pd: exec.pd, currentPrice: exec.currentPrice,
+      swings: exec.swings, newsRiskHigh: news.high
+    });
+    const scenarios = SMC.buildScenarios(exec);
+    renderPrimary(result);
+    renderAlternative(scenarios, bias === 'bearish' ? 'bearish' : 'bullish');
+    Layout.setStatusBar({ lastUpdateText: 'just now', apiOk: true });
+  } finally {
+    btn.disabled = false; btn.textContent = '🧠 GENERATE SETUPS';
+  }
+}
+document.getElementById('analyze-btn').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>

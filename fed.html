@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Gold AI Trader — FED</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0B0D" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="page-title">🏦 FED</div>
+  <div class="page-subtitle">Federal Reserve context for Gold. No live Fed data feed is wired in yet — this page reads whatever you enter in Settings so nothing shown here is invented.</div>
+
+  <div class="panel narrative-panel">
+    <h2>Current stance (manual)</h2>
+    <div id="fed-body" class="empty-state">Loading…</div>
+    <p style="font-size:12px; color:var(--text-dim); margin-top:10px;">
+      Set the current Fed rate, next FOMC date, and hawkish/dovish lean in
+      <a class="nav-link" href="settings.html">Settings</a>. A live version of this page
+      (pulling real statements and rate-expectation data) is a future step — ask if you want
+      it wired up next.
+    </p>
+  </div>
+
+  <div class="panel narrative-panel">
+    <h2>Gold impact — general relationship</h2>
+    <ul class="narrative-list">
+      <li>Dovish Fed / rate cuts expected → typically supportive of Gold (lower opportunity cost, weaker dollar bias).</li>
+      <li>Hawkish Fed / rate hikes or "higher for longer" → typically pressures Gold.</li>
+      <li>These are general tendencies, not rules — price action confirmation on the chart always matters more than the macro read alone.</li>
+    </ul>
+  </div>
+
+  <footer class="app-footer">Gold AI Trader · FED</footer>
+</div>
+<script src="smc-engine.js"></script>
+<script src="data.js"></script>
+<script src="layout.js"></script>
+<script>
+Layout.mount('fed');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+function load() {
+  const raw = localStorage.getItem('goldAiTrader.fedContext');
+  const box = document.getElementById('fed-body');
+  if (!raw) { box.textContent = 'Not configured yet — set it in Settings.'; return; }
+  try {
+    const fed = JSON.parse(raw);
+    box.innerHTML = `
+      <div class="liquidity-row"><span>Current Fed Funds Rate</span><span class="val">${fed.rate || '—'}</span></div>
+      <div class="liquidity-row"><span>Next FOMC</span><span class="val">${fed.nextFomc || '—'}</span></div>
+      <div class="liquidity-row"><span>Bias</span><span class="val">${fed.bias || '—'}</span></div>
+      <div class="liquidity-row"><span>Notes</span><span class="val">${fed.notes || '—'}</span></div>`;
+  } catch (e) { box.textContent = 'Not configured yet — set it in Settings.'; }
+  Layout.setStatusBar({ apiOk: true, lastUpdateText: 'just now' });
+}
+load();
+</script>
+</body>
+</html>
